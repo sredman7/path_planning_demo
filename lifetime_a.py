@@ -192,19 +192,59 @@ def show_path(grid: np.ndarray, path: list[tuple[int, int]]):
     plt.title('LPA* Path Planning')
     plt.show()
 
-def create_obstacle(grid: np.ndarray, coords: list[tuple[int, int]]):
+def modify_grid(grid: np.ndarray, coords: list[tuple[int, int]], val=1):
     '''
-    Given an occupancy grid and list of coordinates (x,y), mark the vertices at each coordinate
-    as occupied.
+    Given an occupancy grid and list of coordinates (x, y), set the occupancy of each vertex
 
     Keyword Arguments:
     grid -- occupancy grid (row, col) = (y, x); 0 = empty, 1 = obstacle
+    coords -- list of grid coordinates (x, y) to modify
+    val -- value assigned to modified grid vertices, defaults to 1 (occupied)
     '''
+    
+    rows, cols = grid.shape
+    for (x, y) in coords:
+        if 0 <= x < cols and 0 <= y < rows:
+            grid[y, x] = val
+        else:
+            print(f"obstacle at {x}, {y} out of bounds")
+
+def update_edge_costs(graph: dict, grid: np.ndarray, queue: list, obs: list[tuple[int, int]]):
+    '''
+    Given a graph of vertices, an occupancy grid, a priority queue, and new obstacles, 
+    update the relevant edge costs and vertices.
+
+    Keyword Arguments:
+    graph -- graph containing vertex information
+    grid -- occupancy grid
+    queue -- priority queue
+    obs -- list of new obstacles
+    '''
+
+    rows, cols = grid.shape # grid bounds
+    to_update = [] # empty list of vertices to update
+
+    # add obstacle and neighbors to update list if not already there and within bounds
+    for (x, y) in obs:
+        for nx in range(x-1, x+2):
+            for ny in range(y-1, y+2):
+                if (nx, ny) not in to_update and 0<=nx<cols and 0<=ny<rows: 
+                    to_update.append((nx, ny))
+
+    # for each changed vertex, update neighbors then update vertex
+    for (x, y) in to_update:
+        graph[(x, y)]['neighbors'] = get_neighbors(grid=grid, position=(x,y))
+        update_vertex(vertex=graph[(x,y)], graph=graph, queue=queue)
 
 ## initialization
 # obstacle grid
 grid = np.zeros((20 ,30))
-grid[10, 5:25] = 1 # horizontal wall
+
+# horizontal wall
+obs = []
+for x in range(5,25): obs.append((x, 10))
+modify_grid(grid=grid, coords=obs)
+
 
 # start and goal positions
 start_pos = (4, 2)
@@ -244,6 +284,17 @@ else:
     print("No path found.")
 
 # add new obstacle
-grid[5:10, 13] # vertical wall
+obs = []
+for y in range(5,10): obs.append((15, y))
+modify_grid(grid=grid, coords=obs)
 
-# 'update edge costs' in this implementation = update valid neighbors
+# update edge costs and vertices
+update_edge_costs(graph=graph, grid=grid, queue=queue, obs=obs)
+
+# recompute and display path
+path = compute_shortest_path(queue=queue, graph=graph)
+
+if path:
+    show_path(grid=grid, path=path)
+else:
+    print("No path found.")
