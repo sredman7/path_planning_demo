@@ -161,7 +161,7 @@ def show_path(grid: np.ndarray, path: list[tuple[int, int]]):
 
     # create figure and show grid
     plt.figure(figsize=(10, 10))
-    plt.imshow(grid, cmap='binary')
+    plt.imshow(grid, cmap='binary', origin='lower')
 
     # plot path and markers
     if path:

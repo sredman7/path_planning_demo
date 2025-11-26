@@ -1,23 +1,25 @@
 import numpy as np
 import heapq
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 
-## Lifetime Planning A*
-# structure: Graph contains all vertices keyed by their position and start/goal information. Grid is an occupancy grid of obstacles. 
-# Queue is a heap list of (key, position) tuple pairs.
+## D* Lite
+# structure: Graph contains all vertices keyed by their position, start/goal information, and accumulation scalar. 
+# True and known grids are occupancy grids of obstacles. Queue is a heap list of (key, position) tuple pairs.
 
-def calculate_key(vertex: dict, goal_pos: tuple[int, int]) -> tuple[float, float]:
+## functions
+def calculate_key(vertex: dict, start_pos: tuple[int, int], km: float) -> tuple[float, float]:
     '''
     Calculates the key of a vertex on the graph.
 
     Keyword Arguments:
     vertex -- the vertex whose key is being calculated
-    goal_pos -- the goal position of the graph, (x,y)
+    start_pos -- the start position of the graph, (x,y)
 
     Returns:
     Key pair for priority queue
     '''
-    return min(vertex['g'], vertex['rhs']) + heuristic(vertex['position'], goal_pos), min(vertex['g'], vertex['rhs'])
+    return min(vertex['g'], vertex['rhs']) + heuristic(start_pos, vertex['position']) + km, min(vertex['g'], vertex['rhs'])
 
 def heuristic(pos1: tuple[int, int], pos2: tuple[int, int]) -> float:
     '''
@@ -32,7 +34,7 @@ def update_vertex(vertex: dict, graph: dict, queue: list):
     '''
     Updates the rhs and key of a vertex
     '''
-    if vertex['position'] != graph['start_pos']:
+    if vertex['position'] != graph['goal_pos']:
         # update look-ahead distance estimate
         rhs_min = float('inf')
         for neighbor_pos in vertex['neighbors']:
@@ -47,21 +49,27 @@ def update_vertex(vertex: dict, graph: dict, queue: list):
 
     # add back to queue if inconsistent
     if vertex['g'] != vertex['rhs']:
-        vertex['key'] = calculate_key(vertex=vertex, goal_pos=graph['goal_pos'])
+        vertex['key'] = calculate_key(vertex=vertex, start_pos=graph['start_pos'], km=graph['km'])
         heapq.heappush(queue, (vertex['key'], vertex['position']))
         
 def compute_shortest_path(queue: list, graph: dict) -> list[tuple[int, int]]:
     '''
     Computes and returns shortest path between start and goal.
     '''
-    # loop while goal is inconsistent or there's a more efficient path
-    while queue[0][0] < calculate_key(vertex=graph[graph['goal_pos']], goal_pos=graph['goal_pos']) or \
-        graph[graph['goal_pos']]['g'] != graph[graph['goal_pos']]['rhs']:
+    # loop while start is inconsistent or there's a more efficient path
+    while queue[0][0] < calculate_key(vertex=graph[graph['start_pos']], start_pos=graph['start_pos'], km=graph['km']) or \
+        graph[graph['start_pos']]['g'] != graph[graph['start_pos']]['rhs']:
         
-        _, current_pos = heapq.heappop(queue)
+        key_old, current_pos = heapq.heappop(queue)
         
-        # if overconsistent, make consistent and update neighbors
-        if graph[current_pos]['g'] > graph[current_pos]['rhs']:
+        # if key has increased, add back to queue
+        current_key = calculate_key(vertex=graph[current_pos], start_pos=graph['start_pos'], km=graph['km'])
+        if key_old < current_key:
+            graph[current_pos]['key'] = current_key
+            heapq.heappush(queue, (current_key, current_pos))
+
+        # else if overconsistent, make consistent and update neighbors
+        elif graph[current_pos]['g'] > graph[current_pos]['rhs']:
             graph[current_pos]['g'] = graph[current_pos]['rhs']
             for neighbor_pos in graph[current_pos]['neighbors']:
                 update_vertex(
@@ -73,26 +81,26 @@ def compute_shortest_path(queue: list, graph: dict) -> list[tuple[int, int]]:
         # otherwise, mark inf cost and update self and neighbors
         else:
             graph[current_pos]['g'] = float('inf')
+            update_vertex(
+                vertex = graph[current_pos],
+                graph = graph,
+                queue = queue
+            )
             for neighbor_pos in graph[current_pos]['neighbors']:
                 update_vertex(
                     vertex = graph[neighbor_pos], 
                     graph = graph, 
                     queue = queue
                 )
-            update_vertex(
-                vertex = graph[current_pos],
-                graph = graph,
-                queue = queue
-            )
     
     # trace and return path
-    if graph[graph['goal_pos']]['g'] == float('inf'): return [] # empty if no path found
+    if graph[graph['start_pos']]['g'] == float('inf'): return [] # empty if no path found
     
     else:
-        current_pos = graph['goal_pos']
+        current_pos = graph['start_pos']
         path = [current_pos]
 
-        while current_pos != graph['start_pos']:
+        while current_pos != graph['goal_pos']:
             cost_min = float('inf')
             pos_min = current_pos
 
@@ -149,10 +157,11 @@ def create_vertex(position: tuple[int, int], g = float('inf'), rhs = float('inf'
         'neighbors': neighbors
     }
 
-def create_graph(grid: np.ndarray, start_pos: tuple[int, int], goal_pos: tuple[int, int]) -> dict:
+def create_graph(grid: np.ndarray, start_pos: tuple[int, int], goal_pos: tuple[int, int], km=0.0) -> dict:
     '''
     Creates the graph containing all vertices of the state space
     '''
+
     rows, cols = grid.shape
     graph = {}
 
@@ -167,6 +176,7 @@ def create_graph(grid: np.ndarray, start_pos: tuple[int, int], goal_pos: tuple[i
     # remember start and goal positions
     graph['start_pos'] = start_pos
     graph['goal_pos'] = goal_pos
+    graph['km'] = km
 
     return graph
 
@@ -189,7 +199,30 @@ def show_path(grid: np.ndarray, path: list[tuple[int, int]]):
 
     plt.grid(True)
     plt.legend(fontsize=12)
-    plt.title('LPA* Path Planning')
+    plt.title('D* Path Planning - Intermediate Step')
+    plt.show()
+
+def draw_grid(grid_true: np.ndarray, grid_known: np.ndarray, path: list[tuple[int, int]]):
+    '''
+    Plot occupancy grid of obstacles and planned path, with start and goal positiions marked.
+    Note grid (row, col) = (y, x). 
+    '''
+   
+    # create figure and show grids
+    plt.figure(figsize=(10, 10))
+    plt.imshow(grid_true, cmap='binary', origin='lower') # true in black
+    plt.imshow(grid_known, cmap=ListedColormap(['w', 'r'])) # known in red
+
+    # plot path and markers
+    if path:
+        path_arr = np.array(path)
+        plt.plot(path_arr[:,0], path_arr[:,1], 'b-', linewidth=3, label='Path Taken')
+        plt.plot(path_arr[0,0], path_arr[0,1], 'go', markersize=15, label='Start')
+        plt.plot(path_arr[-1,0], path_arr[-1,1], 'ro', markersize=15, label='Goal')
+
+    plt.grid(True)
+    plt.legend(fontsize=12)
+    plt.title('D* Path Planning')
     plt.show()
 
 def modify_grid(grid: np.ndarray, coords: list[tuple[int, int]], val=1):
@@ -236,65 +269,122 @@ def update_edge_costs(graph: dict, grid: np.ndarray, queue: list, obs: list[tupl
         graph[(x, y)]['neighbors'] = get_neighbors(grid=grid, position=(x,y))
         update_vertex(vertex=graph[(x,y)], graph=graph, queue=queue)
 
-## initialization
-# obstacle grid
-grid = np.zeros((20 ,30))
+def update_perception(grid_true: np.ndarray, grid_known: np.ndarray, start_pos: tuple[int, int], perception_range=1) \
+    -> list[tuple[int, int]]:
+    '''
+    Updates known grid to reflect obstacles within perception range, returning locations 
+    (x, y) of any changes.
 
-# horizontal wall
-obs = []
-for x in range(5,25): obs.append((x, 10))
-modify_grid(grid=grid, coords=obs)
+    Keyword Arguments:
+    grid_true --
+    grid_known --
+    perception_range -- 
+    '''
 
+    changes = []
 
+    # check for updates in range
+    for x in range(start_pos[0]-perception_range, start_pos[0]+perception_range+1):
+        for y in range(start_pos[1]-perception_range, start_pos[1]+perception_range+1):
+            if 0<=x<=grid_known.shape[1] and 0<=y<=grid_known.shape[0]:
+                if grid_known[y, x] != grid_true[y, x]:
+                    grid_known[y, x] = grid_true[y, x]
+                    changes.append((x, y))
+
+    return changes
+
+## parameters
 # start and goal positions
 start_pos = (4, 2)
 goal_pos = (28, 18)
 
+perception_range = 5 # robot perception range
+bounds = (20, 30) # grid shape (rows, cols)
+
+# obstacles
+obs = []
+for x in range(5,25): obs.append((x, 10)) # horizontal wall
+for y in range(5,10): obs.append((15, y)) # vertical wall
+
+## initialization
+# true obstacle grid
+grid_true = np.zeros(bounds)
+modify_grid(grid=grid_true, coords=obs)
+
+# known obstacle grid
+grid_known = np.zeros(grid_true.shape)
+update_perception(grid_true=grid_true, grid_known=grid_known, start_pos=start_pos, perception_range=perception_range)
+
 # graph of all vertices
 graph = create_graph(
-    grid = grid,
+    grid = grid_known,
     start_pos = start_pos,
     goal_pos = goal_pos
 )
 
-# set start vertex rhs to zero
-graph[graph['start_pos']]['rhs'] = 0
+# set goal vertex rhs to zero
+graph[graph['goal_pos']]['rhs'] = 0
 
-# create queue and add start vertex
-queue = [(calculate_key(graph[graph['start_pos']], graph['goal_pos']), graph['start_pos'])]
+# create queue and add goal vertex
+queue = [(calculate_key(graph[graph['goal_pos']], graph['start_pos'], km=graph['km']), graph['goal_pos'])]
 
 ## main path planning loop
+# start at start
+last_pos = graph['start_pos'] # position of last computation
+pos_history = [last_pos]
+steps = 0 # steps since beginning
 
-# forever
-    # compute_shortest_path
-    # wait for changes in edge costs
-    # for all edges with changed costs
-        # update edge cost
-        # update vertex
+# preliminary path
+path_history = {steps: compute_shortest_path(queue=queue, graph=graph)}
+show_path(grid=grid_known, path=path_history[steps])
 
+# iterate until goal is reached
+while graph['start_pos'] != graph['goal_pos']:
+    
+    if graph[graph['start_pos']]['g'] == float('inf'):
+        # no path possible
+        print(f"No path found - aborted after {steps} steps")
+        break
+
+    # update position
+    new_pos = graph['start_pos']
+    cost_min = float('inf')
+
+    for pos in graph[graph['start_pos']]['neighbors']:
+        cost = graph[pos]['g'] + heuristic(graph['start_pos'], pos)
+        if cost < cost_min:
+            new_pos = pos
+            cost_min = cost
+
+    graph['start_pos'] = new_pos
+    steps = steps + 1
+    pos_history.append(new_pos)
+
+    # check for updated edge costs; if changes detected, update
+    changes = update_perception(
+        grid_true=grid_true, 
+        grid_known=grid_known, 
+        start_pos=graph['start_pos'], 
+        perception_range=perception_range)
+    
+    if changes:
+        graph['km'] = graph['km'] + heuristic(last_pos, graph['start_pos']) # accumulation scalar
+        last_pos = graph['start_pos'] # update position of last computation
+
+        update_edge_costs(
+            graph = graph,
+            grid = grid_known,
+            queue = queue,
+            obs = changes
+        )
+
+        path_history[steps] = compute_shortest_path(queue=queue, graph=graph)
+        show_path(grid=grid_known, path=path_history[steps])
 
 ## testing and visualization
-# find base path
-path = compute_shortest_path(queue=queue, graph=graph)
+draw_grid(
+    grid_known = grid_known,
+    grid_true = grid_true,
+    path = pos_history
+)
 
-# display if found
-if path:
-    show_path(grid=grid, path=path)
-else:
-    print("No path found.")
-
-# add new obstacle
-obs = []
-for y in range(5,10): obs.append((15, y))
-modify_grid(grid=grid, coords=obs)
-
-# update edge costs and vertices
-update_edge_costs(graph=graph, grid=grid, queue=queue, obs=obs)
-
-# recompute and display path
-path = compute_shortest_path(queue=queue, graph=graph)
-
-if path:
-    show_path(grid=grid, path=path)
-else:
-    print("No path found.")
