@@ -46,6 +46,7 @@ def update_vertex(vertex: dict, graph: dict, queue: list):
     in_queue = [item for item in queue if vertex['position'] in item] # weird fanagling to grab vertex with matching position from key queue
     if in_queue != []:
         queue.remove(in_queue[0])
+        heapq.heapify(queue)
 
     # add back to queue if inconsistent
     if vertex['g'] != vertex['rhs']:
@@ -210,8 +211,8 @@ def draw_grid(grid_true: np.ndarray, grid_known: np.ndarray, path: list[tuple[in
    
     # create figure and show grids
     plt.figure(figsize=(10, 10))
-    plt.imshow(grid_true, cmap='binary', origin='lower') # true in black
-    plt.imshow(grid_known, cmap=ListedColormap(['w', 'r'])) # known in red
+    img1 = plt.imshow(grid_true, cmap='binary', origin='lower') # true in grey
+    img2 = plt.imshow(grid_known, cmap='binary', alpha=0.5, origin='lower') # known in black
 
     # plot path and markers
     if path:
@@ -286,7 +287,7 @@ def update_perception(grid_true: np.ndarray, grid_known: np.ndarray, start_pos: 
     # check for updates in range
     for x in range(start_pos[0]-perception_range, start_pos[0]+perception_range+1):
         for y in range(start_pos[1]-perception_range, start_pos[1]+perception_range+1):
-            if 0<=x<=grid_known.shape[1] and 0<=y<=grid_known.shape[0]:
+            if 0<=x<grid_known.shape[1] and 0<=y<grid_known.shape[0]:
                 if grid_known[y, x] != grid_true[y, x]:
                     grid_known[y, x] = grid_true[y, x]
                     changes.append((x, y))
@@ -326,7 +327,8 @@ graph = create_graph(
 graph[graph['goal_pos']]['rhs'] = 0
 
 # create queue and add goal vertex
-queue = [(calculate_key(graph[graph['goal_pos']], graph['start_pos'], km=graph['km']), graph['goal_pos'])]
+queue = []
+heapq.heappush(queue, (calculate_key(graph[graph['goal_pos']], graph['start_pos'], km=graph['km']), graph['goal_pos']))
 
 ## main path planning loop
 # start at start
