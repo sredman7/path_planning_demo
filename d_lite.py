@@ -305,7 +305,10 @@ bounds = (20, 30) # grid shape (rows, cols)
 # obstacles
 obs = []
 for x in range(5,25): obs.append((x, 10)) # horizontal wall
-for y in range(5,10): obs.append((15, y)) # vertical wall
+for y in range(5,20): obs.append((15, y)) # vertical wall
+for x in range(17, 20):
+    for y in range(5, 8):
+        obs.append((x, y))
 
 ## initialization
 # true obstacle grid
