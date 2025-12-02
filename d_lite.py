@@ -201,7 +201,7 @@ def show_path(grid: np.ndarray, path: list[tuple[int, int]]):
     plt.grid(True)
     plt.legend(fontsize=12)
     plt.title('D* Path Planning - Intermediate Step')
-    plt.show()
+    #plt.show()
 
 def draw_grid(grid_true: np.ndarray, grid_known: np.ndarray, path: list[tuple[int, int]]):
     '''
@@ -224,7 +224,7 @@ def draw_grid(grid_true: np.ndarray, grid_known: np.ndarray, path: list[tuple[in
     plt.grid(True)
     plt.legend(fontsize=12)
     plt.title('D* Path Planning')
-    plt.show()
+    #plt.show()
 
 def modify_grid(grid: np.ndarray, coords: list[tuple[int, int]], val=1):
     '''
@@ -242,6 +242,15 @@ def modify_grid(grid: np.ndarray, coords: list[tuple[int, int]], val=1):
             grid[y, x] = val
         else:
             print(f"obstacle at {x}, {y} out of bounds")
+
+def create_box(xrange: tuple[int, int], yrange: tuple[int, int], obs: list[tuple[int, int]]):
+    '''
+    Add the coordinates of a rectangular box to the given list of obstacle coordinates
+    '''
+
+    for x in range(xrange[0], xrange[1]):
+        for y in range(yrange[0], yrange[1]):
+            obs.append((x, y))
 
 def update_edge_costs(graph: dict, grid: np.ndarray, queue: list, obs: list[tuple[int, int]]):
     '''
@@ -294,102 +303,151 @@ def update_perception(grid_true: np.ndarray, grid_known: np.ndarray, start_pos: 
 
     return changes
 
+def dstar(
+        start_pos: tuple[int, int],
+        goal_pos: tuple[int, int],
+        bounds: tuple[int, int],
+        obs: list[tuple[int, int]],
+        perception_range: int,
+        stepshow = False
+) -> dict:
+    '''
+    Navigate from start to goal using D* Lite pathfinding algorithm
+    '''
+
+    ## initialization
+    # true obstacle grid
+    grid_true = np.zeros(bounds)
+    modify_grid(grid=grid_true, coords=obs)
+
+    # known obstacle grid
+    grid_known = np.zeros(grid_true.shape)
+    update_perception(grid_true=grid_true, grid_known=grid_known, start_pos=start_pos, perception_range=perception_range)
+
+    # graph of all vertices
+    graph = create_graph(
+        grid = grid_known,
+        start_pos = start_pos,
+        goal_pos = goal_pos
+    )
+
+    # set goal vertex rhs to zero
+    graph[graph['goal_pos']]['rhs'] = 0
+
+    # create queue and add goal vertex
+    queue = []
+    heapq.heappush(queue, (calculate_key(graph[graph['goal_pos']], graph['start_pos'], km=graph['km']), graph['goal_pos']))
+
+    ## main path planning loop
+    # start at start
+    last_pos = graph['start_pos'] # position of last computation
+    pos_history = [last_pos]
+    steps = 0 # steps since beginning
+
+    # preliminary path
+    path_history = {steps: compute_shortest_path(queue=queue, graph=graph)}
+    if stepshow: show_path(grid=grid_known, path=path_history[steps])
+
+    # iterate until goal is reached
+    while graph['start_pos'] != graph['goal_pos']:
+        
+        if graph[graph['start_pos']]['g'] == float('inf'):
+            # no path possible
+            print(f"No path found - aborted after {steps} steps")
+            break
+
+        # update position
+        new_pos = graph['start_pos']
+        cost_min = float('inf')
+
+        for pos in graph[graph['start_pos']]['neighbors']:
+            cost = graph[pos]['g'] + heuristic(graph['start_pos'], pos)
+            if cost < cost_min:
+                new_pos = pos
+                cost_min = cost
+
+        graph['start_pos'] = new_pos
+        steps = steps + 1
+        pos_history.append(new_pos)
+
+        # check for updated edge costs; if changes detected, update
+        changes = update_perception(
+            grid_true=grid_true, 
+            grid_known=grid_known, 
+            start_pos=graph['start_pos'], 
+            perception_range=perception_range)
+        
+        if changes:
+            graph['km'] = graph['km'] + heuristic(last_pos, graph['start_pos']) # accumulation scalar
+            last_pos = graph['start_pos'] # update position of last computation
+
+            update_edge_costs(
+                graph = graph,
+                grid = grid_known,
+                queue = queue,
+                obs = changes
+            )
+
+            path_history[steps] = compute_shortest_path(queue=queue, graph=graph)
+            if stepshow: show_path(grid=grid_known, path=path_history[steps])
+
+    ## visualization
+    draw_grid(
+        grid_known = grid_known,
+        grid_true = grid_true,
+        path = pos_history
+    )
+
+    return graph
+
 ## parameters
 # start and goal positions
 start_pos = (4, 2)
 goal_pos = (28, 18)
-
-perception_range = 5 # robot perception range
 bounds = (20, 30) # grid shape (rows, cols)
 
-# obstacles
-obs = []
-for x in range(5,25): obs.append((x, 10)) # horizontal wall
-for y in range(5,20): obs.append((15, y)) # vertical wall
-for x in range(17, 20):
-    for y in range(5, 8):
-        obs.append((x, y))
+perception_range = 5 # robot perception range
 
-## initialization
-# true obstacle grid
-grid_true = np.zeros(bounds)
-modify_grid(grid=grid_true, coords=obs)
+## obstacle configurations
+# cross + box
+obs_cross = []
+for x in range(5,25): obs_cross.append((x, 10)) # horizontal wall
+for y in range(5,20): obs_cross.append((15, y)) # vertical wall
+create_box(xrange=(18,21), yrange=(5,8), obs=obs_cross) # box
 
-# known obstacle grid
-grid_known = np.zeros(grid_true.shape)
-update_perception(grid_true=grid_true, grid_known=grid_known, start_pos=start_pos, perception_range=perception_range)
+# scattered boxes
+obs_scatter = []
+create_box(xrange=(5,8), yrange=(1,4), obs=obs_scatter)
+create_box(xrange=(8,12), yrange=(5,7), obs=obs_scatter)
+create_box(xrange=(11,13), yrange=(10,15), obs=obs_scatter)
+create_box(xrange=(4,8), yrange=(12,14), obs=obs_scatter)
+create_box(xrange=(18,22), yrange=(15,17), obs=obs_scatter)
+create_box(xrange=(16,19), yrange=(5,11), obs=obs_scatter)
+create_box(xrange=(24,27), yrange=(10,19), obs=obs_scatter)
+create_box(xrange=(20,27), yrange=(0,5), obs=obs_scatter)
+create_box(xrange=(1,5), yrange=(6,11), obs=obs_scatter)
 
-# graph of all vertices
-graph = create_graph(
-    grid = grid_known,
+# maze
+obs_maze = []
+
+
+## testing
+graph_cross = dstar(
     start_pos = start_pos,
-    goal_pos = goal_pos
+    goal_pos = goal_pos,
+    bounds = bounds,
+    obs = obs_cross,
+    perception_range = perception_range
 )
 
-# set goal vertex rhs to zero
-graph[graph['goal_pos']]['rhs'] = 0
-
-# create queue and add goal vertex
-queue = []
-heapq.heappush(queue, (calculate_key(graph[graph['goal_pos']], graph['start_pos'], km=graph['km']), graph['goal_pos']))
-
-## main path planning loop
-# start at start
-last_pos = graph['start_pos'] # position of last computation
-pos_history = [last_pos]
-steps = 0 # steps since beginning
-
-# preliminary path
-path_history = {steps: compute_shortest_path(queue=queue, graph=graph)}
-show_path(grid=grid_known, path=path_history[steps])
-
-# iterate until goal is reached
-while graph['start_pos'] != graph['goal_pos']:
-    
-    if graph[graph['start_pos']]['g'] == float('inf'):
-        # no path possible
-        print(f"No path found - aborted after {steps} steps")
-        break
-
-    # update position
-    new_pos = graph['start_pos']
-    cost_min = float('inf')
-
-    for pos in graph[graph['start_pos']]['neighbors']:
-        cost = graph[pos]['g'] + heuristic(graph['start_pos'], pos)
-        if cost < cost_min:
-            new_pos = pos
-            cost_min = cost
-
-    graph['start_pos'] = new_pos
-    steps = steps + 1
-    pos_history.append(new_pos)
-
-    # check for updated edge costs; if changes detected, update
-    changes = update_perception(
-        grid_true=grid_true, 
-        grid_known=grid_known, 
-        start_pos=graph['start_pos'], 
-        perception_range=perception_range)
-    
-    if changes:
-        graph['km'] = graph['km'] + heuristic(last_pos, graph['start_pos']) # accumulation scalar
-        last_pos = graph['start_pos'] # update position of last computation
-
-        update_edge_costs(
-            graph = graph,
-            grid = grid_known,
-            queue = queue,
-            obs = changes
-        )
-
-        path_history[steps] = compute_shortest_path(queue=queue, graph=graph)
-        show_path(grid=grid_known, path=path_history[steps])
-
-## testing and visualization
-draw_grid(
-    grid_known = grid_known,
-    grid_true = grid_true,
-    path = pos_history
+graph_scatter = dstar(
+    start_pos = start_pos,
+    goal_pos = goal_pos,
+    bounds = bounds,
+    obs = obs_scatter,
+    perception_range = perception_range
 )
 
+
+
+plt.show()
