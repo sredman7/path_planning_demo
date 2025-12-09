@@ -372,8 +372,8 @@ def dstar(
     steps = 0 # steps since beginning
 
     # preliminary path
-    path_history = {steps: compute_shortest_path(queue=queue, graph=graph)}
-    if stepshow: show_path(grid=grid_known, path=path_history[steps])
+    graph['path_history'] = {steps: compute_shortest_path(queue=queue, graph=graph)}
+    if stepshow: show_path(grid=grid_known, path=graph['path_history'][steps])
 
     # iterate until goal is reached
     while graph['start_pos'] != graph['goal_pos']:
@@ -415,8 +415,8 @@ def dstar(
                 obs = changes
             )
 
-            path_history[steps] = compute_shortest_path(queue=queue, graph=graph)
-            if stepshow: show_path(grid=grid_known, path=path_history[steps])
+            graph['path_history'][steps] = compute_shortest_path(queue=queue, graph=graph)
+            if stepshow: show_path(grid=grid_known, path=graph['path_history'][steps])
 
     ## visualization
     draw_grid(

@@ -1,5 +1,6 @@
 from d_lite import create_wall, create_box, dstar, gen_start_goal
 import matplotlib.pyplot as plt
+import numpy as np
 
 ## parameters
 # start and goal positions
@@ -82,7 +83,7 @@ start_maze, goal_maze = (0,20), (15, 6)
 #start_maze, goal_maze = gen_start_goal(bounds=(21,31), obs=obs_maze)
 
 ## testing
-graph_cross,_,_ = dstar(
+graph_cross,_,true_cross = dstar(
     start_pos = start_cross,
     goal_pos = goal_cross,
     bounds = bounds,
@@ -105,5 +106,22 @@ graph_maze,_,_ = dstar(
     obs=obs_maze,
     perception_range=3
 )
+
+# show steps
+paths = graph_cross['path_history']
+fig, axs = plt.subplots(int(np.ceil(len(paths)/3)),3)
+
+i = 0
+for path in paths.values():
+    axs.flat[i].imshow(true_cross, cmap='binary', origin='lower')
+    
+    arr = np.array(path)
+    axs.flat[i].plot(arr[:,0], arr[:,1], 'b-')
+    axs.flat[i].plot(arr[0,0], arr[0,1], 'go')
+    axs.flat[i].plot(arr[-1,0], arr[-1,1], 'ro')
+
+    i = i+1
+
+axs[-1,-1].axis('off')
 
 plt.show()
